@@ -10,268 +10,355 @@ Program #5
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
+#include <iostream>
 
 using namespace std;
 
 //constructor
-ListFile_t::ListFile_t() {
+ListFile_t::ListFile_t()
+{
 	this->size = 0;
 	this->head = NULL;
 }
 
-ListFile_t::ListFile_t(const ListFile_t& src) {
-	Node_t* current = src.head; //might not work?, maybe loop on src.getSize() and get the element data?
-	//could just do src[0]?
-	while(current != NULL) {
+//copy constructor
+ListFile_t::ListFile_t(const ListFile_t& src)
+{
+	Node_t* current = src.head;
+	while (current != NULL)
+	{
 		insert(current->getName(), current->getData(), current->getNodeSize());
-//		current = current->getNext();
 		current = (*current).getNext();
 	}
 }
 
-ListFile_t& ListFile_t::operator=(const ListFile_t& rhs) {
-	//whenever uses operator= set two lists equal to eachother
+ListFile_t& ListFile_t::operator=(const ListFile_t& rhs)
+{
 	clear();
-	Node_t* current = rhs.head; //might not work
-	while(current != NULL) {
+	Node_t* current = rhs.head;
+	while (current != NULL)
+	{
 		insert(current->getName(), current->getData(), current->getNodeSize());
-//		current = current->getNext();
 		current = (*current).getNext();
 	}
 	return *this;
 }
 
-
-ListFile_t::~ListFile_t() {
-	while(this->head != NULL) {
+//destructor
+ListFile_t::~ListFile_t()
+{
+	while (this->head != NULL)
+	{
 		Node_t* next = this->head->getNext();
 		free(this->head);
 		this->head = next;
 	}
 	this->size = 0;
+	this->head = NULL;
 }
 
-int ListFile_t::readFile(const string& filename) {
-
-	int fd = open(filename.c_str(), O_RDONLY);
-	if (fd == -1) {
-		return -1;
-	}
-
-	size_t numElements = 0;
-
-	ssize_t toRead = 8;
-	ssize_t haveRead = 0;
-	unsigned char* buffer = (unsigned char*)&numElements;
-
+//added to cut down on code for reading
+int safeRead(int fd, unsigned char* buffer, int toRead)
+{
 	ssize_t readResult = 0;
-	while((readResult = read(fd, buffer + haveRead, toRead)) != -1)
+	ssize_t haveRead = 0;
+	while ((readResult = read(fd, buffer + haveRead, toRead)) != -1)
 	{
-		if(readResult == 0)
-		{
-			//???
-		}
 		haveRead += readResult;
 		toRead -= readResult;
-		if(toRead == 0)
+		if (toRead == 0)
 		{
 			break;
 		}
 	}
-	if (toRead!=0) {
+	return haveRead;
+}
+
+//added to cut down on code for reading
+int safeWrite(int fd, const unsigned char* buffer, int toWrite)
+{
+	ssize_t writeResult = 0;
+	ssize_t haveWritten = 0;
+	while ((writeResult = write(fd, buffer + haveWritten, toWrite)) != -1)
+	{
+		haveWritten += writeResult;
+		toWrite -= writeResult;
+		if (toWrite == 0)
+		{
+			break;
+		}
+	}
+
+	return haveWritten;
+}
+
+
+int ListFile_t::readFile(const string& filename)
+{
+	ListFile_t* temp = new ListFile_t();
+	size_t retval;
+	retval = temp->appendFromFile(filename);
+	if (retval < 0)
+	{
 		return -1;
 	}
-	ListFile_t* temp = new ListFile_t();
-//	ListFile_t temp;
-	for(size_t i = 0; i < numElements; i++) {
+
+	(*this) = *temp;
+	return 0;
+}
+
+ssize_t ListFile_t::appendFromFile(const string& filename)
+{
+	int fd = open(filename.c_str(), O_RDONLY);
+	if (fd == -1)
+	{
+		return -1;
+	}
+
+	size_t numInserted = 0;
+	size_t numElements = 0;
+	ssize_t toRead = 8;
+	unsigned char* buffer = (unsigned char*) &numElements;
+
+	ssize_t readResult = 0;
+	readResult = safeRead(fd, buffer, toRead);
+	if (readResult < toRead)
+	{
+		return -1;
+	}
+
+	ListFile_t* temp = new ListFile_t(*this);
+	for (size_t i = 0; i < numElements; i++)
+	{
 		size_t nameLength = 0;
 		size_t dataLength = 0;
 		char* name = NULL;
 		void* data = NULL;
 
 		toRead = 8;
-		haveRead = 0;
-		buffer = (unsigned char*)&nameLength;
-
-		while((readResult = read(fd, buffer + haveRead, toRead)) != -1)
+		buffer = (unsigned char*) &nameLength;
+		readResult = safeRead(fd, buffer, toRead);
+		if (readResult < toRead)
 		{
-			if(readResult == 0)
-			{
-				//return -1 or exit??
-			}
-			haveRead += readResult;
-			toRead -= readResult;
-			if(toRead == 0)
-			{
-				break;
-			}
-		}
-		if (toRead!=0) {
+			close(fd);
 			delete temp;
 			return -1;
 		}
 
 
 		toRead = 8;
-		haveRead = 0;
-		buffer = (unsigned char*)&dataLength;
+		buffer = (unsigned char*) &dataLength;
+		readResult = safeRead(fd, buffer, toRead);
 
-		while((readResult = read(fd, buffer + haveRead, toRead)) != -1)
+		if (readResult < toRead)
 		{
-			if(readResult == 0)
-			{
-				//return -1 or exit??
-			}
-			haveRead += readResult;
-			toRead -= readResult;
-			if(toRead == 0)
-			{
-				break;
-			}
-		}
-		if (toRead!=0) {
+			close(fd);
 			delete temp;
 			return -1;
 		}
 
 		toRead = nameLength;
-		haveRead = 0;
-		name = (char*)malloc(nameLength * sizeof(char));
-		buffer = (unsigned char*)name;
+		name = (char*) malloc((nameLength + 1) * sizeof(char));
+		buffer = (unsigned char*) name;
 
-		while((readResult = read(fd, buffer + haveRead, toRead)) != -1)
+		readResult = safeRead(fd, buffer, toRead);
+
+		if (readResult < toRead)
 		{
-			if(readResult == 0)
-			{
-				//return -1 or exit??
-			}
-			haveRead += readResult;
-			toRead -= readResult;
-			if(toRead == 0)
-			{
-				break;
-			}
-		}
-		if (toRead!=0) {
 			delete temp;
+			free(name);
+			close(fd);
 			return -1;
 		}
+		name[nameLength] = '\0';
 
 		toRead = dataLength;
-		haveRead = 0;
-		data = (char*)malloc(dataLength * sizeof(char));
-		buffer = (unsigned char*)data;
+		data = (char*) malloc(dataLength * sizeof(char));
+		buffer = (unsigned char*) data;
 
-		while((readResult = read(fd, buffer + haveRead, toRead)) != -1)
+		readResult = safeRead(fd, buffer, toRead);
+
+		if (readResult < toRead)
 		{
-			if(readResult == 0)
-			{
-				//return -1 or exit??
-			}
-			haveRead += readResult;
-			toRead -= readResult;
-			if(toRead == 0)
-			{
-				break;
-			}
-		}
-		if (toRead!=0) {
 			delete temp;
+			free(name);
+			free(data);
+			close(fd);
 			return -1;
 		}
 
 		temp->insert(name, data, dataLength);
-
+		free(name);
+		free(data);
 	}
 
-	this->~ListFile_t(); //should call destructor but not actually delete
-
-//	*this = temp; //expecting const ListFile_t& but getting ListFile_t*, issue with copy constructor
-	//loop through temp and insert namd and data for each node
-	for(size_t i = 0; i < temp->getSize(); i++) {
-		this->insert(temp->getElementName(i), temp->getElementData(i), temp->getElementSize(i));
+	Node_t* current = temp->head;
+	while (current != NULL)
+	{
+		int retVal = this->insert(current->getName(), current->getData(), current->getNodeSize());
+		if (retVal != 0)
+		{
+			numInserted++;
+		}
+		current = current->getNext();
 	}
 	delete temp;
-	return 0;
+	close(fd);
+	return numInserted;
 }
 
-//for append, same as read but loop through temp at the end and insert each one
-//never delete list
-ssize_t ListFile_t::appendFromFile(const string& filename) {
+int ListFile_t::saveToFile(const string& filename) const
+{
+	int fd = open(filename.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH);
+	if (fd == -1)
+	{
+		return -1;
+	}
+
+	size_t haveWritten = 0;
+
+	ssize_t toWrite = 8;
+	const unsigned char* buffer = (unsigned char*) &(this->size);
+
+	ssize_t writeResult = safeWrite(fd, buffer, toWrite);
+	if (writeResult < 0)
+	{
+		close(fd);
+		return -1;
+	}
+
+	Node_t* currNode = this->head;
+	while (currNode != NULL)
+	{
+		size_t nameLength = currNode->getName().length();
+		size_t dataLength = currNode->getNodeSize();
+		const char* name = currNode->getName().c_str();
+		void* data = currNode->getData();
+
+
+		toWrite = 8;
+		buffer = (unsigned char*) &nameLength;
+
+		writeResult = safeWrite(fd, buffer, toWrite);
+		if (writeResult < 0)
+		{
+			close(fd);
+			return -1;
+		}
+
+		toWrite = 8;
+		buffer = (unsigned char*) &dataLength;
+
+		writeResult = safeWrite(fd, buffer, toWrite);
+		if (writeResult < 0)
+		{
+			close(fd);
+			return -1;
+		}
+
+		toWrite = nameLength;
+		buffer = (unsigned char*) name;
+
+		writeResult = safeWrite(fd, buffer, toWrite);
+		if (writeResult < 0)
+		{
+			close(fd);
+			return -1;
+		}
+
+		toWrite = dataLength;
+		buffer = (unsigned char*) data;
+
+		writeResult = safeWrite(fd, buffer, toWrite);
+		if (writeResult < 0)
+		{
+			close(fd);
+			return -1;
+		}
+
+		currNode = currNode->getNext();
+		haveWritten++;
+	}
+
+	if (haveWritten != size)
+	{
+		fprintf(stderr, "Unexpected number of nodes found. Expected %d, found %d\n", (int) size, (int) haveWritten);
+		return -1;
+	}
+
 	return 1;
 }
 
-int ListFile_t::saveToFile(const string& filename) const {
-	//calling open on a file that doesnt exist creates a new file
-
-	return 1;
-}
-
-size_t ListFile_t::getSize() const {
+size_t ListFile_t::getSize() const
+{
 	return this->size;
 }
 
-size_t ListFile_t::getElementSize(size_t index) const {
-	Node_t* current = this->head->getNext();
-	for(size_t i = 0; i < index; i++) {
-		current = this->head->getNext();
-	}
-	return current->getNodeSize();
+size_t ListFile_t::getElementSize(size_t index) const
+{
+	return (*this)[index].getNodeSize();
 }
 
-void* ListFile_t::getElementData(size_t index) const {
-	Node_t* current = this->head->getNext();
-	for(size_t i = 0; i < index; i++) {
-		current = this->head->getNext();
-	}
-	return current->getData();
+void* ListFile_t::getElementData(size_t index) const
+{
+	return (*this)[index].getData();
 }
 
-string ListFile_t::getElementName(size_t index) const {
-	Node_t* current = this->head->getNext();
-	for(size_t i = 0; i < index; i++) {
-		current = this->head->getNext();
-	}
-	return current->getName();
+string ListFile_t::getElementName(size_t index) const
+{
+	return (*this)[index].getName();
 }
 
-const Node_t& ListFile_t::operator[](size_t index) const {
+const Node_t& ListFile_t::operator[](size_t index) const
+{
 	Node_t* currNode = this->head;
-	for(size_t i = 0; i < this->getSize(); i++) {
-		if(i == index) {
+	size_t i = 0;
+	while (true)
+	{
+		if (i == index)
+		{
 			return (*currNode);
 		}
+		i++;
 		currNode = currNode->getNext();
 	}
-	return(*currNode);
 }
 
-Node_t& ListFile_t::operator[](size_t index) {
+Node_t& ListFile_t::operator[](size_t index)
+{
 	Node_t* currNode = this->head;
-	for(size_t i = 0; i < this->getSize(); i++) {
-		if(i == index) {
+	size_t i = 0;
+	while (true)
+	{
+		if (i == index)
+		{
 			return (*currNode);
 		}
+		i++;
 		currNode = currNode->getNext();
 	}
-	return(*currNode);
 }
 
-void ListFile_t::clear() {
+void ListFile_t::clear()
+{
 	Node_t* currNode = this->head;
-	while(currNode != NULL) {
-		Node_t* temp = currNode;
+	while (currNode != NULL)
+	{
+		Node_t* temp = currNode->getNext();
 		delete currNode;
-		currNode = temp->getNext();
+		currNode = temp;
 	}
 	this->head = NULL;
 	this->size = 0;
 }
 
-bool ListFile_t::exists(const string& name) const {
+bool ListFile_t::exists(const string& name) const
+{
 	Node_t* current = this->head;
-	while(current != NULL) {
-		if(name == current->getName()) {
+	while (current != NULL)
+	{
+		if (name == current->getName())
+		{
 			return true;
 		}
 		current = current->getNext();
@@ -279,30 +366,46 @@ bool ListFile_t::exists(const string& name) const {
 	return false;
 }
 
-size_t ListFile_t::count(void* data, size_t size) const {
+size_t ListFile_t::count(void* data, size_t size) const
+{
 	size_t numMatches = 0;
 	Node_t* current = this->head;
-	for(size_t i = 0; i < size; i++) {
-		if(current->getData() == data) {
-			numMatches++;
+	for (size_t i = 0; i < size; i++)
+	{
+		if (current->getNodeSize() == size)
+		{
+			if (memcmp(current->getData(), data, size) == 0)
+			{
+				numMatches++;
+			}
 		}
 		current = current->getNext();
 	}
 	return numMatches;
 }
 
-int ListFile_t::removeByName(const string& name) {
+int ListFile_t::removeByName(const string& name)
+{
+	if (this->size <= 0)
+	{
+		return 0;
+	}
 	Node_t* currNode = this->head;
 	Node_t* nextNode = currNode->getNext();
-	if(currNode->getName() == name) {
+	if (currNode->getName() == name)
+	{
 		this->head = nextNode;
 		delete currNode;
+		this->size--;
 		return 1;
 	}
-	while(currNode != NULL) {
-		if(currNode->getName() == name) {
+	while (nextNode != NULL)
+	{
+		if (nextNode->getName() == name)
+		{
 			currNode->setNext(nextNode->getNext());
 			delete nextNode;
+			this->size--;
 			return 1;
 		}
 		currNode = nextNode;
@@ -311,34 +414,40 @@ int ListFile_t::removeByName(const string& name) {
 	return 0;
 }
 
-int ListFile_t::insert(const string& name, void* data, size_t size) {
-	//check if list is empty, if its empty updates size
-	if(this->getSize() == 0) {
+int ListFile_t::insert(const string& name, void* data, size_t size)
+{
+	if (this->size == 0 || head == NULL)
+	{
 		Node_t* inserted = new Node_t(name, data, size, NULL);
+		this->head = inserted;
 		this->size++;
-		inserted->setNext(NULL);
 		return 1;
 	}
-	//strcmp = 0 if same
 	Node_t* currNode = this->head;
 	Node_t* nextNode = this->head->getNext();
-	//check special case of first node/adding it to the head
-	if(strcmp(currNode->getName().c_str(), name.c_str()) > 0) {
+
+	if (strcmp(currNode->getName().c_str(), name.c_str()) > 0)
+	{
 		Node_t* inserted = new Node_t(name, data, size, currNode);
+		this->head = inserted;
 		this->size++;
-		inserted->setNext(currNode);
 		return 1;
 	}
 
-	while(nextNode != NULL) {
-		if(strcmp(currNode->getName().c_str(), name.c_str()) == 0) {
-			//Same
+	if (strcmp(currNode->getName().c_str(), name.c_str()) == 0)
+	{
+		return 0;
+	}
+
+	while (nextNode != NULL)
+	{
+		if (strcmp(nextNode->getName().c_str(), name.c_str()) == 0)
+		{
 			return 0;
-		} else if (strcmp(currNode->getName().c_str(), name.c_str()) > 0) {
-			//first comes before second
-			//should check null condition
-			Node_t* temp = currNode->getNext();
-			Node_t* inserted = new Node_t(name, data, size, temp);
+		}
+		else if (strcmp(nextNode->getName().c_str(), name.c_str()) > 0)
+		{
+			Node_t* inserted = new Node_t(name, data, size, nextNode);
 			this->size++;
 			currNode->setNext(inserted);
 			return 1;
@@ -346,14 +455,12 @@ int ListFile_t::insert(const string& name, void* data, size_t size) {
 		currNode = nextNode;
 		nextNode = currNode->getNext();
 	}
-	//add node to end
 	Node_t* inserted = new Node_t(name, data, size, NULL);
 	this->size++;
 	currNode->setNext(inserted);
 	return 1;
 }
 
-void insertInternal(Node_t* data) {
-
+void insertInternal(Node_t* data)
+{
 }
-

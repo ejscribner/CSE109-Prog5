@@ -7,6 +7,7 @@ Program #5
 */
 
 #include "Node.h"
+
 using namespace std;
 
 //constructor
@@ -23,7 +24,7 @@ Node_t::Node_t(const string& name, void* data, size_t size, Node_t* next)
 		this->data = malloc(size);
 		for (size_t i = 0; i < size; i++)
 		{
-			((char *) this->data)[i] = ((char *) data)[i];
+			((char*) this->data)[i] = ((char*) data)[i];
 		}
 	}
 	else
@@ -36,7 +37,6 @@ Node_t::Node_t(const string& name, void* data, size_t size, Node_t* next)
 //destructor
 Node_t::~Node_t()
 {
-	//deallocate/delete everything malloc'd or new
 	free(this->data);
 	this->data = NULL;
 }
@@ -69,7 +69,7 @@ void Node_t::setName(string name)
 	this->name = name;
 }
 
-void Node_t::setData(void *data, size_t size)
+void Node_t::setData(void* data, size_t size)
 {
 	free(this->data);
 	this->size = size;
@@ -81,12 +81,12 @@ void Node_t::setData(void *data, size_t size)
 	this->data = malloc(size);
 	for (size_t i = 0; i < size; i++)
 	{
-		((char *) this->data)[i] = ((char *) data)[i];
+		((char*) this->data)[i] = ((char*) data)[i];
 	}
 
 }
 
-void Node_t::setNext(Node_t * next)
+void Node_t::setNext(Node_t* next)
 {
 	this->next = next;
 }
